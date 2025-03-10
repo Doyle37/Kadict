@@ -1,0 +1,2774 @@
+
+package viettien.newkadict;
+
+import static androidx.core.content.ContextCompat.startActivity;
+
+import android.annotation.SuppressLint;
+import android.app.AlertDialog;
+import android.app.AlertDialog.Builder;
+import android.app.Dialog;
+import android.content.ActivityNotFoundException;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.content.res.AssetManager;
+import android.content.res.Configuration;
+import android.database.Cursor;
+import android.gesture.Gesture;
+import android.gesture.GestureLibraries;
+import android.gesture.GestureLibrary;
+import android.gesture.GestureOverlayView;
+import android.gesture.GestureOverlayView.OnGesturePerformedListener;
+import android.gesture.Prediction;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import androidx.preference.PreferenceManager;
+
+import android.speech.RecognitionListener;
+import android.speech.RecognizerIntent;
+import android.speech.SpeechRecognizer;
+import android.text.Editable;
+import android.text.Html;
+import android.text.TextWatcher;
+import android.util.Log;
+import android.view.Gravity;
+import android.view.KeyEvent;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.View;
+import android.view.View.OnClickListener;
+import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.ImageButton;
+import android.widget.LinearLayout;
+import android.widget.ListView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+
+import androidx.appcompat.app.ActionBar;
+import androidx.appcompat.app.AppCompatActivity;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.FilenameFilter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Locale;
+import android.Manifest;
+
+
+@SuppressLint("NewApi")
+public class Kadict extends AppCompatActivity {
+
+
+    static final private String MAIN_TAG = "[Kadict]";
+
+    static final private int SHOW_CONTENT_CODE = 1;
+    static final private int SHOW_PREFERENCE_CODE = 2;
+    static final private int MENU_ITEM = Menu.FIRST;
+    private GestureLibrary gLib;
+    //private static final String mStoreFile = "";
+
+    private static final String dbFolder = "NewKadict" + File.separator + "db" + File.separator;
+
+    private DatabaseFileList mDBList;
+    private DatabaseFile mDBFile;
+
+    private SharedPreferences prefs;
+    private int mWaitingTime;
+    private boolean doubleBackToExitPressedOnce = false;
+    Menu menu = null;
+
+    private EditText edWord = null;
+    private ListView lstWord = null;
+    private Button btnETextClear = null;
+    private ImageButton btnChup = null;
+    private ImageButton btnMic = null;
+
+    public ArrayList<String> mLSTCurrentWord = null;
+    //public ArrayList<String> mLSTCurrentContent = null;
+    public ArrayList<Integer> mLSTCurrentWordId = null;
+
+    private ArrayAdapter<String> mAdapter = null;
+    private DictionaryEngine dictionaryEngine;
+
+    private Handler mHandler;
+    private Runnable mUpdateTimeTask;
+
+    private static final int REQUEST_RECORD_AUDIO_PERMISSION = 200;
+    private boolean permissionToRecordAccepted = false;
+    private String[] permissions = {Manifest.permission.RECORD_AUDIO};
+    private SpeechRecognizer speechRecognizer;
+    private Button languageToggleButton;
+    private String currentLanguage = "vi-VN";  // Default language set to Vietnamese
+    private boolean isReadyForSpeech = false;
+    private Context context;
+
+    private String[] mFileListNew;
+    protected String currentWord;
+
+    // create Menu for Program
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        super.onCreateOptionsMenu(menu);
+
+        if (!mDBList.items.isEmpty())
+        {
+            getMenuInflater().inflate(R.menu.main_back, menu);
+            // Group ID
+            int groupId = 0;
+
+            // Unique menu item identifier. Used for event handling.
+            int menuItemId = MENU_ITEM;
+
+            // The order position of the item
+            int menuItemOrder = Menu.NONE;
+            this.menu = menu;
+            menu.add(groupId, menuItemId, menuItemOrder, getString(R.string.menuPreference)).setIcon(R.drawable.preference);
+            menu.add(groupId, menuItemId + 1, menuItemOrder, getString(R.string.quickHis)).setIcon(R.drawable.history);
+            menu.add(groupId, menuItemId + 2, menuItemOrder, getString(R.string.quickFav)).setIcon(R.drawable.favrate);
+
+            menu.add(groupId, menuItemId + 3, menuItemOrder, getString(R.string.menuIPA)).setIcon(R.drawable.ipa);
+            menu.add(groupId, menuItemId + 4, menuItemOrder, getString(R.string.menuGramE)).setIcon(R.drawable.grammar);
+
+            menu.add(groupId, menuItemId + 5, menuItemOrder, getString(R.string.menuGestures)).setIcon(R.drawable.ic_gesturebuilder);
+            menu.add(groupId, menuItemId + 6, menuItemOrder, getString(R.string.menuAddingDict)).setIcon(R.drawable.chatgpt);
+            menu.add(groupId, menuItemId + 7, menuItemOrder, getString(R.string.menuAddingDict2)).setIcon(R.drawable.google);
+            menu.add(groupId, menuItemId + 8, menuItemOrder, getString(R.string.menuHelp)).setIcon(R.drawable.help);
+
+            //menu.add(groupId, menuItemId+9, menuItemOrder, getString(R.string.menuOnlineHelp)).setIcon(R.drawable.help);
+            //menu.add(groupId, menuItemId+10, menuItemOrder, getString(R.string.menuVersion)).setIcon(R.drawable.s_kadict);
+            menu.add(groupId, menuItemId + 11, menuItemOrder, getString(R.string.info_12)).setIcon(R.drawable.s_kadict);
+            return true;
+
+        }
+        else
+        {
+
+            ///Toast.makeText(this, R.string.backagain, Toast.LENGTH_SHORT).show();
+
+
+        }        return true;
+    }
+
+    // process event select Menu
+    @SuppressLint("NonConstantResourceId")
+    public boolean onOptionsItemSelected(MenuItem item) {
+        super.onOptionsItemSelected(item);
+
+        // Find which menu item has been selected
+        switch (item.getItemId()) {
+
+            case R.id.btnBack:
+
+                menuMainBack();
+
+                return true;
+
+            case (MENU_ITEM): {
+
+                menuPreference();
+                break;
+            }
+            case (MENU_ITEM + 1): {
+
+                Intent intent = new Intent(getApplicationContext(), HistoryWords.class);
+                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                intent.putExtra("style", mDBFile.style);
+                startActivity(intent);
+                break;
+            }
+            case (MENU_ITEM + 2): {
+                Intent intent = new Intent(getApplicationContext(), FavBawords2.class);
+                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                intent.putExtra("style", mDBFile.style);
+                startActivity(intent);
+                break;
+            }
+            case (MENU_ITEM + 3): {
+                menuIPA();
+
+                break;
+            }
+            case (MENU_ITEM + 4): {
+                Intent intent = new Intent(getApplicationContext(), Grammar.class);
+                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+
+                break;
+            }
+            case (MENU_ITEM + 5): {
+                Intent intent = new Intent(getApplicationContext(), GestureBuilderActivity.class);
+                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+                break;
+            }
+            case (MENU_ITEM + 6): {
+                String url = "http://vi.wiktionary.org/";
+                Intent i = new Intent(Intent.ACTION_VIEW);
+                i.setData(Uri.parse(url));
+                startActivity(i);
+                break;
+            }
+
+            case (MENU_ITEM + 7): {
+                Intent myWebLink = new Intent(Intent.ACTION_VIEW);
+
+                myWebLink.setData(Uri.parse("http://translate.google.com.vn/m/translate"));
+                startActivity(myWebLink);
+                break;
+            }
+
+            case (MENU_ITEM + 8): {
+                //menuDictionaryManager();
+                menuHelp();
+                break;
+            }
+			/*
+			case (MENU_ITEM+9):
+			{
+                String url = "http://nguyenvietkhoa.edu.vn/2016/08/12/kadict-tu-dien-viet-cho-android-moi/";
+                Intent i = new Intent(Intent.ACTION_VIEW);
+                i.setData(Uri.parse(url));
+                startActivity(i);
+				break;
+			}
+			*/
+
+            case (MENU_ITEM + 11): {
+                Intent intent = new Intent(getApplicationContext(), About.class);
+                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+                break;
+            }
+        }
+        return true;
+    }
+
+    public void menuIPA() {
+        Intent intent = new Intent(getApplicationContext(), ipa.class);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(intent);
+    }
+
+    public void menuHelp() {
+        openAbout("file:///android_asset/about.html", true);
+    }
+
+    public void menuPreference() {
+        //Log.i(MAIN_TAG, "Start preference");
+        startActivityForResult(new Intent(this, MainPreferenceActivity.class), SHOW_PREFERENCE_CODE);
+
+    }
+
+    public void menuMainBack() {
+
+        LinearLayout tabview = (LinearLayout) this.findViewById(R.id.tabview);
+        assert tabview != null;
+        tabview.setVisibility(LinearLayout.VISIBLE);
+
+
+
+        lstWord.setAdapter(null);
+        btnETextClear.setVisibility(View.GONE);
+        edWord.setText("");
+        if (menu.findItem(R.id.btnBack) != null)
+            menu.findItem(R.id.btnBack).setVisible(false);
+
+    }
+
+    public void openAbout(String strAboutPath, boolean bType) {
+        setContentView(R.layout.about);
+        WebView wvInfo = (WebView) findViewById(R.id.wvInfo);
+
+
+        assert wvInfo != null;
+        wvInfo.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                Log.i("WebView", "Attempting to load URL: " + url);
+
+                view.loadUrl(url);
+                return true;
+            }
+        });
+
+        if (!bType) // about of dictionary
+        {
+            String strLine;
+            StringBuilder sbInfo = new StringBuilder();
+            Log.i(MAIN_TAG, "About path = " + strAboutPath);
+            File fInfo = new File(strAboutPath);
+            if (fInfo.exists() && fInfo.length() < 8096) {
+                try {
+                    BufferedReader br = new BufferedReader(new FileReader(fInfo));
+                    //Read File Line By Line
+                    while ((strLine = br.readLine()) != null) {
+                        sbInfo.append(strLine);
+                    }
+
+                    //Close the input stream
+                    br.close();
+                } catch (Exception e) {//Catch exception if any
+                    sbInfo.append("<html><body><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" />");
+                    sbInfo.append(mDBFile.fileName);
+                    sbInfo.append("</body></html>");
+                }
+            } else {
+                Log.i(MAIN_TAG, "About file doesn't exist!");
+                sbInfo.append("<html><body><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" />");
+                sbInfo.append(mDBFile.fileName);
+                sbInfo.append("</body></html>");
+            }
+            wvInfo.loadDataWithBaseURL(null, sbInfo.toString(), "text/html", "UTF-8", "about:blank");
+        } else {
+            wvInfo.loadUrl(strAboutPath);
+        }
+
+        Button btnOkAbout = (Button) findViewById(R.id.btnOkAbout);
+        assert btnOkAbout != null;
+        btnOkAbout.setOnClickListener(v -> {
+            setContentView(R.layout.main);
+            if (mDBList.items.size() > 0) {
+                menuMain();
+            }
+        });
+
+    }
+
+    /**
+     * Called when the activity is first created.
+     */
+    @SuppressLint("UnsafeIntentLaunch")
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        applyLocale();
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+        String mDBExtension = getResources().getString(R.string.dbExtension);
+
+        File externalFilesDir = this.getExternalFilesDir(null);  // This gets the root of your app's external files directory
+        String mDBPath = externalFilesDir.getAbsolutePath() + "/NewKadict/db/";
+
+        mDBList = new DatabaseFileList(mDBPath, mDBExtension);
+        Log.i(MAIN_TAG, "CSDL = " + mDBList);
+        Log.e("DatabaseCheck", "mDBList is not initialized.");
+
+        prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(this);
+        mWaitingTime = Integer.parseInt(prefs.getString("waitingTime", "0"));
+
+        loadPreferences();
+
+        ChangeLog cl = new ChangeLog(this);
+        if (cl.firstRun())
+            cl.getLogDialog().show();
+
+        ActionBar actionBar = getSupportActionBar();
+
+        Bitmap myImage = BitmapFactory.decodeResource(getResources(), R.drawable.bg_new);
+        Drawable dr = new BitmapDrawable(this.getResources(), myImage);
+        assert actionBar != null;
+        actionBar.setBackgroundDrawable(dr);
+
+        actionBar.setBackgroundDrawable(dr);
+        //getSupportActionBar()/* or getSupportActionBar() */.setTitle(Html.fromHtml("<font color=\"#FFFFFF\">" + getString(R.string.app_name_TM) + "</font>"));
+        actionBar.setTitle(Html.fromHtml("<font color=\"#FFFFFF\">" + "<b>" + getString(R.string.app_name_TM) + "</b"+ "</font>"));
+
+
+
+        //Copy info files
+        AssetManager am = getAssets();
+
+        File fav = new File(this.getExternalFilesDir(null) + "/NewKadict/db/anh_viet/anh_viet.nvk");
+        if(fav.exists())
+        {
+            String fileName = "anh_viet.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/anh_viet/" + fileName);
+            long len;
+            File file = new File(this.getExternalFilesDir(null) + "/NewKadict/db/anh_viet/" + fileName);
+
+            len = file.length();
+            System.out.println(len);
+
+            if(len!= 1822) {
+
+                try {
+
+                    InputStream in = am.open("anh_viet.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        @SuppressLint("UnsafeIntentLaunch") Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+
+            }
+
+            if (!destinationFile.exists())
+
+                try {
+
+                    InputStream in = am.open("anh_viet.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+
+        }
+
+        File fva = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_anh/viet_anh.nvk");
+        if(fva.exists())
+        {
+
+            String fileName = "viet_anh.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_anh/" + fileName);
+
+            long len;
+            File file = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_anh/" + fileName);
+
+            len = file.length();
+            System.out.println(len);
+
+            if(len!= 1906) {
+
+                try {
+
+                    InputStream in = am.open("viet_anh.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+
+            }
+
+            if (!destinationFile.exists())
+
+                try {
+                    InputStream in = am.open("viet_anh.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+            //file.mkdirs();
+            //And your other stuffs goes here
+        }
+
+
+        File faatd = new File(this.getExternalFilesDir(null) + "/NewKadict/db/OxfordTD/OxfordTD.nvk");
+        if(faatd.exists())
+        {
+            String fileName = "OxfordTD.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/OxfordTD/" + fileName);
+            if (!destinationFile.exists())
+
+                try {
+
+                    InputStream in = am.open("OxfordTD.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+        }
+
+        File faaald = new File(this.getExternalFilesDir(null) + "/NewKadict/db/OxfordALD/OxfordALD.nvk");
+        if(faaald.exists())
+        {
+            String fileName = "OxfordALD.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/OxfordALD/" + fileName);
+            if (!destinationFile.exists())
+
+                try {
+
+                    InputStream in = am.open("OxfordALD.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+        }
+        //Copy pre-built gestures from assets
+        File gest = new File(this.getExternalFilesDir(null) + "/NewKadict/db/gestures");
+        if(gest.exists())
+        {
+            System.out.println("Gestures existed");
+        }
+        else
+        {
+            try {
+
+                String fileName = "gestures";
+                File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/" + fileName);
+                InputStream in = am.open("gestures");
+                FileOutputStream f = new FileOutputStream(destinationFile);
+                byte[] buffer = new byte[1024];
+                int len1 = 0;
+                while ((len1 = in.read(buffer)) > 0) {
+                    f.write(buffer, 0, len1);
+                }
+                f.close();
+
+            } catch (Exception e) {
+                Log.d("CopyFileFromAssetsToSD", e.getMessage());
+            }
+        }
+
+        File fpv = new File(this.getExternalFilesDir(null) + "/NewKadict/db/phap_viet/phap_viet.nvk");
+        if(fpv.exists())
+        {
+            String fileName = "phap_viet.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/phap_viet/" + fileName);
+            if (!destinationFile.exists())
+
+                try {
+
+                    InputStream in = am.open("phap_viet.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+
+        }
+
+        File fvp = new File(mDBPath + "/viet_phap/viet_phap.nvk");
+        if(fvp.exists())
+        {
+            String fileName = "viet_phap.ifo";
+            File destinationFile = new File(mDBPath + "/viet_phap/" + fileName);
+            if (!destinationFile.exists())
+
+                try {
+
+                    InputStream in = am.open("viet_phap.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+
+        }
+
+        File fvn = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_nhat/viet_nhat.nvk");
+        if(fvn.exists())
+        {
+            String fileName = "viet_nhat.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_nhat/" + fileName);
+            if (!destinationFile.exists())
+
+                try {
+
+                    InputStream in = am.open("viet_nhat.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+
+        }
+
+
+
+        File fnv = new File(this.getExternalFilesDir(null) + "/NewKadict/db/nhat_viet/nhat_viet.nvk");
+        if(fnv.exists())
+        {
+            String fileName = "nhat_viet.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/nhat_viet/" + fileName);
+            if (!destinationFile.exists())
+                try {
+
+                    InputStream in = am.open("nhat_viet.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+        }
+
+
+        File ftv_pt = new File(this.getExternalFilesDir(null) + "/NewKadict/db/trung_viet/trung_viet.nvk");
+        if(ftv_pt.exists())
+        {
+            String fileName = "trung_viet.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/trung_viet/" + fileName);
+            if (!destinationFile.exists())
+                try {
+
+                    InputStream in = am.open("trung_viet.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+        }
+
+        File fvt_pt = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_trung/viet_trung.nvk");
+        if(fvt_pt.exists())
+        {
+            String fileName = "viet_trung.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_trung/" + fileName);
+            if (!destinationFile.exists())
+                try {
+
+                    InputStream in = am.open("viet_trung.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+        }
+
+        File hv = new File(this.getExternalFilesDir(null) + "/NewKadict/db/han_viet/han_viet.nvk");
+        if(hv.exists())
+        {
+            String fileName = "han_viet.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/han_viet/" + fileName);
+            if (!destinationFile.exists())
+                try {
+
+                    InputStream in = am.open("han_viet.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+        }
+
+        File vh = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_han/viet_han.nvk");
+        if(vh.exists())
+        {
+            String fileName = "viet_han.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_han/" + fileName);
+            if (!destinationFile.exists())
+                try {
+
+                    InputStream in = am.open("viet_han.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+        }
+
+        File ngv = new File(this.getExternalFilesDir(null) + "/NewKadict/db/nga_viet/nga_viet.nvk");
+        if(ngv.exists())
+        {
+            String fileName = "nga_viet.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/nga_viet/" + fileName);
+            if (!destinationFile.exists())
+                try {
+
+                    InputStream in = am.open("nga_viet.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+        }
+
+        File vng = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_nga/viet_nga.nvk");
+        if(vng.exists())
+        {
+            String fileName = "viet_nga.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_nga/" + fileName);
+            if (!destinationFile.exists())
+                try {
+
+                    InputStream in = am.open("viet_nga.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+        }
+        File dv = new File(this.getExternalFilesDir(null) + "/NewKadict/db/duc_viet/duc_viet.nvk");
+
+        //File dv = new File(this.getExternalFilesDir(null) + "dNewKadict/db/duc_viet/duc_viet.nvk");
+        if(dv.exists())
+        {
+            String fileName = "duc_viet.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/duc_viet/" + fileName);
+            if (!destinationFile.exists())
+                try {
+
+                    InputStream in = am.open("duc_viet.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+        }
+
+        File vd = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_duc/viet_duc.nvk");
+        if(vd.exists())
+        {
+            String fileName = "viet_duc.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_duc/" + fileName);
+            if (!destinationFile.exists())
+                try {
+
+                    InputStream in = am.open("viet_duc.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+        }
+        File vv = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_viet/viet_viet.nvk");
+        if(vv.exists())
+        {
+            String fileName = "viet_viet.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_viet/" + fileName);
+            if (!destinationFile.exists())
+                try {
+
+                    InputStream in = am.open("viet_viet.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+        }
+
+
+        File ftv_gt = new File(this.getExternalFilesDir(null) + "/NewKadict/db/trung_viet_gt/trung_viet_gt.nvk");
+        if(ftv_gt.exists())
+        {
+            String fileName = "trung_viet_gt.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/trung_viet_gt/" + fileName);
+            if (!destinationFile.exists())
+                try {
+
+                    InputStream in = am.open("trung_viet_gt.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+        }
+
+        File fvt_gt = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_trung_gt/viet_trung_gt.nvk");
+        if(fvt_gt.exists())
+        {
+            String fileName = "viet_trung_gt.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_trung_gt/" + fileName);
+            if (!destinationFile.exists())
+                try {
+
+                    InputStream in = am.open("viet_trung_gt.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+        }
+
+        File svs = new File(this.getExternalFilesDir(null) + "/NewKadict/db/svs/svs.nvk");
+        if(svs.exists())
+        {
+            String fileName = "svs.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/svs/" + fileName);
+            if (!destinationFile.exists())
+                try {
+
+                    InputStream in = am.open("svs.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+        }
+
+
+        File yv = new File(this.getExternalFilesDir(null) + "/NewKadict/db/y_viet/y_viet.nvk");
+        if(yv.exists())
+        {
+            String fileName = "y_viet.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/y_viet/" + fileName);
+            if (!destinationFile.exists())
+                try {
+
+                    InputStream in = am.open("y_viet.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+        }
+
+        File vy = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_y/viet_y.nvk");
+        if(vy.exists())
+        {
+            String fileName = "viet_y.ifo";
+            File destinationFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/viet_y/" + fileName);
+            if (!destinationFile.exists())
+                try {
+
+                    InputStream in = am.open("viet_y.ifo");
+                    FileOutputStream f = new FileOutputStream(destinationFile);
+                    byte[] buffer = new byte[1024];
+                    int len1 = 0;
+                    while ((len1 = in.read(buffer)) > 0) {
+                        f.write(buffer, 0, len1);
+                    }
+                    f.close();
+                    if (Build.VERSION.SDK_INT >= 15) {
+                        recreate();
+                    } else {
+                        Intent intent = getIntent();
+                        finish();
+                        startActivity(intent);
+                    }
+
+                } catch (Exception e) {
+                    Log.d("CopyFileFromAssetsToSD", e.getMessage());
+                }
+        }
+        else
+        {
+
+        }
+
+
+        /*TODO :
+         * - no database file -> message and go to downloader
+         */
+
+        if (mDBList.items.size() > 0)
+        {
+            menuMain();
+        }
+        else
+        {
+            menuMain_2();
+            new Builder(this)
+                    .setCancelable(false)
+                    .setMessage(R.string.errorNoData)
+                    .setIcon(R.drawable.notice1)
+                    .setTitle(getString(R.string.error))
+                    .setPositiveButton(getString(R.string.inf), new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialog, int whichButton) {
+                            // Code to execute when the "Ok" button is clicked
+                            Intent intent = new Intent(getApplicationContext(), About_1st.class);
+                            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            startActivity(intent);
+                            dialog.dismiss();  // Simply dismiss the dialog
+                        }
+                    })
+                    .setNeutralButton(getString(R.string.Install), new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialog, int whichButton) {
+                            Intent mainIntent = new Intent(Kadict.this, /*Download_Dict.class*/KDataBase.class);
+                            mainIntent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                            Kadict.this.startActivity(mainIntent);
+                        }
+                    })
+                    .show();
+
+        }
+        Intent receivedIntent = getIntent();
+        String receivedAction = receivedIntent.getAction();
+        String receivedType = receivedIntent.getType();
+        TextView txtView = (EditText) findViewById(R.id.edWord);
+        //if(receivedAction.equals(Intent.ACTION_SEND)){
+        if (Intent.ACTION_SEND.equals(receivedAction) && receivedType != null) {
+            if(receivedType.startsWith("text/")) {
+                String receivedText = receivedIntent.getStringExtra(Intent.EXTRA_TEXT);
+                if (receivedText != null)
+                {
+
+                    receivedText = receivedText.toLowerCase();
+                    //Remove all non-word elements starting and/or ending a string
+                    String strippedInput = receivedText.replaceAll("^\\W+|\\W+$", "");
+                    System.out.println("Stripped string: " + strippedInput);
+                    //receivedText = txtView.getText().toString().toLowerCase();
+
+                    AssetManager assetManager = getAssets();
+                    InputStream input;
+                    try {
+                        input = assetManager.open("anh_viet.ifo");
+
+                        int size = input.available();
+                        byte[] buffer = new byte[size];
+                        input.read(buffer);
+                        input.close();
+
+                        // byte buffer into a string
+                        String ifo = new String(buffer);
+
+                        Intent i = new Intent(getApplicationContext(), ContentView_Share.class);
+                        i.putExtra("word", strippedInput);
+                        //i.putExtra("id",mLSTCurrentWordId.get(arg2));
+                        i.putExtra("db", "anh_viet");
+                        i.putExtra("share", "kadict_shared");
+                        //i.putExtra("dbName", "anh_viet.nvk");
+
+                        i.putExtra("style", ifo);
+
+                        startActivity(i);
+                        finish();
+
+                    } catch (IOException e) {
+                        // TODO Auto-generated catch block
+                        e.printStackTrace();
+                    }
+
+                }
+
+
+            }
+            else {
+                assert txtView != null;
+                txtView.setText("");
+            }
+        }
+
+
+    }
+
+    // Handle the result of the permission request
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        switch (requestCode) {
+            case REQUEST_RECORD_AUDIO_PERMISSION:
+                permissionToRecordAccepted = grantResults[0] == PackageManager.PERMISSION_GRANTED;
+                if (!permissionToRecordAccepted) {
+                    Toast.makeText(this, (getResources().getString(R.string.mic_denied)), Toast.LENGTH_SHORT).show();
+                } else {
+                    initializeSpeechRecognizer(); // Proceed with speech recognition if permission granted
+                }
+                break;
+        }
+    }
+
+    @Override
+    protected void onResume() {
+
+        //Rate.onResume();
+        super.onResume();
+        //loadPreferences();
+       // refreshTableView();
+        this.doubleBackToExitPressedOnce = false;
+
+    }
+
+    @Override
+    protected void onDestroy() {
+        //Rate.onDestroy();
+        super.onDestroy();
+        if (speechRecognizer != null) {
+            speechRecognizer.destroy();
+
+        }
+
+
+        //loadPreferences();
+
+    }
+
+    @Override
+    public void onStop()
+    {
+
+
+        super.onStop();
+
+
+    }
+
+
+    @Override
+    public void onRestart(){
+
+        //edWord = (EditText) findViewById(R.id.edWord);
+        //edWord.setText("");
+        //edWord.setEnabled(true);
+        super.onRestart();
+        //loadPreferences();
+
+    }
+
+    public void menuMain_2()
+    {
+        //Log.i(MAIN_TAG, "Start menuMain");
+
+        edWord = (EditText) findViewById(R.id.edWord);
+        edWord.setHint(R.string.edWordText);
+
+
+        Button btnDictionaryManager = (Button) findViewById(R.id.btnDictionaryManager);
+
+
+        btnDictionaryManager.setOnClickListener(new OnClickListener() {
+
+            @Override
+            public void onClick(View v) {
+                // TODO Auto-generated method stub
+                Intent intent = new Intent(Kadict.this, db_add_Download_Dict.class);
+                intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                Kadict.this.startActivity(intent);
+            }
+
+        });
+    }
+
+    public void menuMain()
+    {
+        //Log.i(MAIN_TAG, "Start menuMain");
+
+        edWord = (EditText) findViewById(R.id.edWord);
+        edWord.setHint(R.string.edWordText);
+        lstWord = (ListView) findViewById(R.id.lstWord);
+
+        Button btnDictionaryManager = (Button) findViewById(R.id.btnDictionaryManager);
+        Button btnKnowledge = (Button) findViewById(R.id.btnKnowledge);
+        Button btnInfo = (Button) findViewById(R.id.btnInfo);
+        Button btnBingTranslate = (Button) findViewById(R.id.btnBingTranslate);
+        Button btnFav = (Button) findViewById(R.id.know_fav);
+        Button btnPref = (Button) findViewById(R.id.btnPref_);
+        btnETextClear = (Button) findViewById(R.id.clear_txt);
+        btnChup = (ImageButton) findViewById(R.id.chup);
+        btnMic = (ImageButton) findViewById(R.id.mic);
+
+
+        edWord.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override
+            public void onFocusChange(View v, boolean hasFocus) {
+                if (hasFocus) {
+                    // Hide the ImageButton when EditText is focused
+                    btnChup.setVisibility(View.GONE);
+                    btnMic.setVisibility(View.GONE);
+                } else {
+                    // Show the ImageButton when EditText loses focus
+                    btnChup.setVisibility(View.VISIBLE);
+                    btnMic.setVisibility(View.VISIBLE);
+                }
+            }
+        });
+
+
+        String selectedValue = mDBFile.fileName;
+
+        if (mDBFile.fileName.equals("anh_viet"))
+        {
+            selectedValue = ((getResources().getString(R.string.db_s_av)));
+        }
+        if (mDBFile.fileName.equals("phap_viet"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_pv));
+        }
+
+        if (mDBFile.fileName.equals("trung_viet"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_tv));
+        }
+        if (mDBFile.fileName.equals("trung_viet_gt"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_tvgt));
+        }
+
+        if (mDBFile.fileName.equals("duc_viet"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_dv));
+        }
+        if (mDBFile.fileName.equals("han_viet"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_hv));
+        }
+
+        if (mDBFile.fileName.equals("nga_viet"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_ngav));
+        }
+        if (mDBFile.fileName.equals("nhat_viet"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_nv));
+        }
+
+        if (mDBFile.fileName.equals("viet_anh"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_va));
+        }
+        if (mDBFile.fileName.equals("viet_phap"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_vp));
+        }
+
+
+        if (mDBFile.fileName.equals("viet_trung"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_vt));
+        }
+
+        if (mDBFile.fileName.equals("viet_trung_gt"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_vtgt));
+        }
+        if (mDBFile.fileName.equals("viet_duc"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_vd));
+        }
+
+        if (mDBFile.fileName.equals("viet_han"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_vh));
+        }
+        if (mDBFile.fileName.equals("viet_nga"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_vnga));
+        }
+
+        if (mDBFile.fileName.equals("viet_nhat"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_vn));
+        }
+        if (mDBFile.fileName.equals("viet_viet"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_vv));
+        }
+
+        if (mDBFile.fileName.equals("OxfordALD"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_aaald));
+        }
+        if (mDBFile.fileName.equals("OxfordTD"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_aatd));
+        }
+        if (mDBFile.fileName.equals("grammar"))
+        {
+            selectedValue = (getResources().getString(R.string.gram));
+        }
+        if (mDBFile.fileName.equals("svs"))
+        {
+            selectedValue = (getResources().getString(R.string.svs));
+        }
+
+        if (mDBFile.fileName.equals("y_viet"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_yv));
+        }
+
+        if (mDBFile.fileName.equals("viet_y"))
+        {
+            selectedValue = (getResources().getString(R.string.db_s_vy));
+        }
+
+
+        File mStoreFile = new File(this.getExternalFilesDir(null) + "/NewKadict/db/gestures");
+
+        //(getResources().getString(R.string.dbinUse))
+        getSupportActionBar().setSubtitle(Html.fromHtml("<font color=\"#E9B6B6\">" +"<i>" + (getResources().getString(R.string.dbinUse)) +"</i>" + "</font>" + "<font color=\"#ccff99\">" + " " + selectedValue + "</font>"));
+
+        //mLSTCurrentContent = new ArrayList<String>();
+        mLSTCurrentWordId = new ArrayList<Integer>();
+        mLSTCurrentWord = new ArrayList<String>();
+
+        mAdapter = new ArrayAdapter<>(getApplicationContext(), R.layout.customlist);
+
+        GestureOverlayView gestures = (GestureOverlayView) findViewById(R.id.gestures);
+        //overlay.addOnGestureListener(new GesturesProcessor());
+        //gestures.addOnGesturePerformedListener(handleGestureListener);
+
+        gestures.addOnGesturePerformedListener(handleGestureListener);
+        boolean isGesture = prefs.getBoolean("isGesture", true);
+        if (isGesture)
+        {
+
+            gLib = GestureLibraries.fromFile(mStoreFile);
+
+            gLib.load();
+            if (!gLib.load()) {
+                Log.w(MAIN_TAG, "could not load gesture library");
+                //finish();
+            }
+
+            gestures.setEnabled(true);
+        }
+        else
+        {
+            gestures.setEnabled(false);
+            Log.w(MAIN_TAG, "Gestures disabled");
+        }
+        // kiem tra xem activity nay co nhan duoc mot tu de tra tu mot
+        // intent khac hay khong?]
+        String have_word = "have_word";
+        String s = getIntent().getStringExtra(have_word);
+
+        {
+            if (s != null) {
+                edWord.setText(s);
+                edWord.requestFocus();
+                lstWord.setAdapter(mAdapter);
+                btnETextClear.setVisibility(View.VISIBLE);
+
+
+            } else {
+                edWord.setText("");
+            }
+            /*
+             * TODO:
+             * - no data file -> catch Error;
+             */
+
+            showWordlist();
+
+            //edWord.requestFocus();
+
+            btnBingTranslate.setOnClickListener(new OnClickListener() {
+                @Override
+                public void onClick(View v) {
+
+                    Intent intent = new Intent(getApplicationContext(), Translate_Online.class);
+                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+
+
+                }
+            });
+
+            btnDictionaryManager.setOnClickListener(new OnClickListener() {
+
+                @Override
+                public void onClick(View v) {
+                    // TODO Auto-generated method stub
+                    manageDictionary();
+                }
+
+            });
+
+            btnKnowledge.setOnClickListener(new OnClickListener() {
+
+                @Override
+                public void onClick(View v) {
+
+                    Intent intent = new Intent(getApplicationContext(), Knowledge.class);
+                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+
+                }
+            });
+
+            btnFav.setOnClickListener(new OnClickListener() {
+
+                @Override
+                public void onClick(View v) {
+
+                    Intent intent = new Intent(getApplicationContext(), FavBawords2.class);
+                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+
+                }
+            });
+
+            btnPref.setOnClickListener(new OnClickListener() {
+
+                @Override
+                public void onClick(View v) {
+
+                    Intent intent = new Intent(getApplicationContext(), MainPreferenceActivity.class);
+                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+
+                }
+            });
+
+            btnETextClear.setOnClickListener(new OnClickListener() {
+
+                @Override
+                public void onClick(View v) {
+
+                    edWord.setText("");
+                    showWordlist(); // Call the method after clearing the text
+                    btnETextClear.setVisibility(View.GONE);
+
+                    // Restore TableLayout visibility
+                    LinearLayout tabview = (LinearLayout) findViewById(R.id.tabview);
+                    if (tabview != null) {
+                        tabview.setVisibility(View.VISIBLE); // Restore visibility
+                    }
+
+
+                    if (menu.findItem(R.id.btnBack) != null)
+                        menu.findItem(R.id.btnBack).setVisible(true);
+
+
+                }
+            });
+
+
+            btnInfo = (Button) findViewById(R.id.btnInfo);
+            btnInfo.setOnClickListener(new OnClickListener() {
+
+                @Override
+                public void onClick(View v) {
+                    // TODO Auto-generated method stub
+                    Intent intent = new Intent(getApplicationContext(), ListActivities.class);
+                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    intent.putExtra("style", mDBFile.style);
+                    startActivity(intent);
+                }
+            });
+
+            btnMic.setOnClickListener(v -> {
+                // TODO Auto-generated method stub
+                //Toast.makeText(Kadict.this, "Mic", Toast.LENGTH_SHORT).show();
+                languageToggleButton = findViewById(R.id.languageToggleButton);
+
+
+                // Check for permission to record audio
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                        != PackageManager.PERMISSION_GRANTED) {
+                    // Request the permission
+                    ActivityCompat.requestPermissions(this, permissions, REQUEST_RECORD_AUDIO_PERMISSION);
+                } else {
+                    // If permission is already granted, proceed with initializing SpeechRecognizer
+                    initializeSpeechRecognizer();
+                }
+                // Toggle language between English and Vietnamese when the button is clicked
+                languageToggleButton.setVisibility(View.VISIBLE);
+                languageToggleButton.setOnClickListener(view -> toggleLanguage());
+            });
+
+            btnChup.setOnClickListener(v -> {
+                // TODO Auto-generated method stub
+                Intent intent = new Intent(Kadict.this, CameraActivity.class);
+                intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                Kadict.this.startActivity(intent);
+            });
+
+            ImageButton button_dictSwap = (ImageButton) findViewById(R.id.dict_swap);
+            button_dictSwap.setOnClickListener(new OnClickListener() {
+
+                @Override
+                public void onClick(View v) {
+                    // TODO Auto-generated method stub
+                    loadFileList();
+
+                    Dialog dialog = null;
+                    Builder builder = new Builder(Kadict.this);
+
+                    builder.setTitle((getResources().getString(R.string.qselect)));
+                    builder.setIcon(R.drawable.dic_db);
+                    if (mFileListNew == null) {
+                        Log.e(MAIN_TAG, "Showing file picker before loading the file list");
+                        dialog = builder.create();
+
+                    }
+                    builder.setItems(mFileListNew, new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialog, int which) {
+
+                            EditText text = (EditText) findViewById(R.id.edWord);
+                            String value = text.getText().toString();
+
+                            mDBFile = mDBList.items.get(which);
+
+                            savePreferences();
+                            setContentView(R.layout.main);
+                            menuMain();
+                            edWord.setText("");
+                            edWord.append(value);
+
+
+                        }
+
+                    });
+
+
+                    dialog = builder.show();
+                    dialog.getWindow().setGravity(Gravity.TOP);
+                    WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
+                    params.y = 90;
+                    params.x = 0;
+                    params.dimAmount = 0.f;
+                    dialog.getWindow().setAttributes(params);
+
+
+                }
+            });
+
+
+            mHandler = new Handler();
+
+            //Handler 1
+            mHandler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    //Do something after 20s
+
+                    boolean installed = appInstalledOrNot("viettien.kadict");
+                    if (installed) {
+                        //This intent will help you to launch if the package is already installed
+                        // Creating alert Dialog with three Buttons
+
+                        Builder alertDialog3 = new Builder(
+                                Kadict.this);
+
+                        // Setting Dialog Title
+                        alertDialog3.setTitle((getResources().getString(R.string.new_k)));
+
+                        // Setting Dialog Message
+                        alertDialog3.setMessage((getResources().getString(R.string.new_kadict)));
+
+                        // Setting Icon to Dialog
+                        alertDialog3.setIcon(R.drawable.notice1);
+
+                        // Setting Positive Yes Button
+                        alertDialog3.setPositiveButton((getResources().getString(R.string.ok)),
+                                new DialogInterface.OnClickListener() {
+
+                                    public void onClick(DialogInterface dialog, int which) {
+
+                                        Uri packageURI = Uri.parse("package:" + "viettien.kadict");
+                                        Intent uninstallIntent = new Intent(Intent.ACTION_DELETE, packageURI);
+                                        startActivity(uninstallIntent);
+
+                                    }
+                                });
+                        // Setting Positive Yes Btn
+                        alertDialog3.setNeutralButton((getResources().getString(R.string.db_back)),
+                                new DialogInterface.OnClickListener() {
+
+                                    public void onClick(DialogInterface dialog, int which) {
+                                        // User pressed No button. Write Logic Here
+                                        dialog.cancel();
+                                    }
+                                });
+                        // Showing Alert Dialog
+                        alertDialog3.show();
+
+
+                        System.out.println("Old App is already installed on your phone");
+                    } else {
+                        System.out.println("Old App is not currently installed on your phone");
+                    }
+
+
+                }
+            }, 5000);
+
+
+            mHandler.postDelayed(new Runnable() {
+                public void run() {
+                    if (!isFinishing()) {
+                        if (!prefs.contains("1FirstRun")) {
+
+                            Builder alertDialog3 = new Builder(
+                                    Kadict.this);
+
+                            // Setting Dialog Title
+                            alertDialog3.setTitle(getResources().getString(R.string.note_yt1));
+                            // Setting Dialog Message
+                            alertDialog3.setMessage(getResources().getString(R.string.note_yt2));
+
+                            // Setting Icon to Dialog
+                            alertDialog3.setIcon(R.drawable.notice1);
+
+                            // Setting Positive Yes Button
+                            alertDialog3.setPositiveButton(getResources().getString(R.string.note_yt4),
+                                    new DialogInterface.OnClickListener() {
+
+                                        public void onClick(DialogInterface dialog, int which) {
+                                            {
+
+
+                                                Intent appIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("vnd.youtube:" + "qUk-Ngx1c7M"));
+                                                Intent webIntent = new Intent(Intent.ACTION_VIEW,
+                                                        Uri.parse("https://www.youtube.com/watch?v=qUk-Ngx1c7M"));
+                                                //https://www.youtube.com/watch?v=qUk-Ngx1c7M
+                                                try {
+                                                    startActivity(appIntent);
+                                                } catch (ActivityNotFoundException ex) {
+                                                    startActivity(webIntent);
+                                                }
+
+                                                //Kadict.this.startActivity(appIntent);
+
+                                                SharedPreferences.Editor editor = prefs.edit();
+                                                editor.putBoolean("1FirstRun", true);
+                                                editor.apply();
+
+                                                if (Build.VERSION.SDK_INT >= 15) {
+                                                    recreate();
+                                                } else {
+                                                    Intent intent = getIntent();
+                                                    finish();
+                                                    startActivity(intent);
+                                                }
+
+
+                                            }
+
+                                        }
+                                    });
+
+                            // Setting Negative "Cancel" Btn
+                            alertDialog3.setNegativeButton(getResources().getString(R.string.note_yt3),
+                                    new DialogInterface.OnClickListener() {
+
+                                        public void onClick(DialogInterface dialog, int which) {
+
+                                        }
+                                    });
+                            // Setting Negative "Cancel" Btn
+                            alertDialog3.setNeutralButton(getResources().getString(R.string.db_ox),
+                                    new DialogInterface.OnClickListener() {
+
+                                        public void onClick(DialogInterface dialog, int which) {
+
+
+                                            SharedPreferences.Editor editor = prefs.edit();
+                                            editor.putBoolean("1FirstRun", true);
+                                            editor.apply();
+
+
+                                            if (Build.VERSION.SDK_INT >= 15) {
+                                                recreate();
+                                            } else {
+                                                Intent intent = getIntent();
+                                                finish();
+                                                startActivity(intent);
+                                            }
+
+                                        }
+                                    });
+                            // Showing Alert Dialog
+                            alertDialog3.show();
+
+
+                        }
+
+                    }
+                }
+            }, 5000);
+
+
+            //Handler 3
+            mUpdateTimeTask = new Runnable() {
+                public void run() {
+
+                    Log.i(MAIN_TAG, "update word list now");
+
+                    showWordlist();
+                 }
+
+            };
+            //mHandler.postDelayed(mUpdateTimeTask,10*1000);
+
+            //1 ... process event enter word
+            edWord.addTextChangedListener(new TextWatcher() {
+                public void afterTextChanged(Editable s) {
+
+                    //showWordlist();
+
+                    mHandler.removeCallbacks(mUpdateTimeTask);
+                    mHandler.postDelayed(mUpdateTimeTask, mWaitingTime * 1000L);
+
+                }
+
+                public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+                }
+
+                public void onTextChanged(CharSequence s, int start, int before, int count) {
+
+                    // When the text is empty, show the ImageButton, otherwise hide it
+                    if (s.toString().trim().isEmpty()) {
+                        btnChup.setVisibility(View.VISIBLE);
+                        btnMic.setVisibility(View.VISIBLE);
+                        btnETextClear.setVisibility(View.GONE);// Show the ImageButton
+                    } else {
+                        btnChup.setVisibility(View.GONE);     // Hide the ImageButton
+                        btnMic.setVisibility(View.GONE);
+                    }
+                }
+
+            });
+
+
+            edWord.setOnKeyListener(new View.OnKeyListener() {
+                public boolean onKey(View v, int keyCode, KeyEvent event) {
+                    // If the event is a key-down event on the "enter" button
+
+                    if ((event.getAction() == KeyEvent.ACTION_DOWN) &&
+                            (keyCode == KeyEvent.KEYCODE_ENTER)) {
+                        // Perform action on key press
+
+                        String word = Utility.encodeContent(edWord.getText().toString());
+
+                        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+
+                        imm.hideSoftInputFromWindow(edWord.getWindowToken(), 0);
+                        String baseDir = getExternalFilesDir(null).getAbsolutePath();
+                        //Check if Anh-Viet databse exists
+                        File fia = new File(baseDir + "/NewKadict/db/anh_viet/anh_viet.nvk");
+                        File fiv = new File(baseDir + "/NewKadict/db/viet_anh/viet_anh.nvk");
+
+                        Intent i = new Intent(v.getContext(), ContentView.class);
+                        i.putExtra("word", word);
+                        //i.putExtra("id",mLSTCurrentWordId.get(arg2));
+                        i.putExtra("db", mDBFile.fileName);
+                        i.putExtra("dbName", mDBFile.dictionaryName);
+                        i.putExtra("style", mDBFile.style);
+
+                        if (!fia.exists() && mDBFile.fileName.equals("anh_viet")) {
+                            Builder alertDialog3 = new Builder(
+                                    Kadict.this);
+
+                            // Setting Dialog Title 3
+                            alertDialog3.setTitle(getResources().getString(R.string.note_2));
+
+                            // Setting Dialog Message
+                            alertDialog3.setMessage(getResources().getString(R.string.alert_av));
+
+                            // Setting Icon to Dialog
+                            alertDialog3.setIcon(R.drawable.notice1);
+
+                            // Setting Positive Yes Button
+                            alertDialog3.setPositiveButton(getResources().getString(R.string.ok),
+                                    new DialogInterface.OnClickListener() {
+
+                                        public void onClick(DialogInterface dialog, int which) {
+                                            {
+
+
+                                                Intent mainIntent = new Intent(Kadict.this, Download_av.class);
+                                                mainIntent.putExtra("word", "s");
+
+                                                mainIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT);
+
+                                                Kadict.this.startActivity(mainIntent);
+
+                                            }
+
+
+                                        }
+                                    });
+
+
+                            // Setting Positive "Cancel" Btn
+                            alertDialog3.setNegativeButton(getResources().getString(R.string.dl_cancel),
+                                    new DialogInterface.OnClickListener() {
+
+                                        public void onClick(DialogInterface dialog, int which) {
+
+                                            //finish();
+                                        }
+                                    });
+                            // Showing Alert Dialog
+                            alertDialog3.show();
+                        } else if (!fiv.exists() && mDBFile.fileName.equals("viet_anh")) {
+                            Builder alertDialog3 = new Builder(
+                                    Kadict.this);
+
+                            // Setting Dialog Title
+                            alertDialog3.setTitle(getResources().getString(R.string.note_2));
+
+                            // Setting Dialog Message
+                            alertDialog3.setMessage(getResources().getString(R.string.alert_va));
+
+                            // Setting Icon to Dialog
+                            alertDialog3.setIcon(R.drawable.notice1);
+
+                            // Setting Positive Yes Button
+                            alertDialog3.setPositiveButton(getResources().getString(R.string.ok),
+                                    new DialogInterface.OnClickListener() {
+
+                                        public void onClick(DialogInterface dialog, int which) {
+                                            {
+
+                                                Intent mainIntent = new Intent(Kadict.this, Download_va.class);
+                                                mainIntent.putExtra("word", "s");
+
+                                                mainIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT);
+
+
+                                                Kadict.this.startActivity(mainIntent);
+
+
+                                            }
+                                        }
+                                    });
+
+
+                            // Setting Positive "Cancel" Btn
+                            alertDialog3.setNegativeButton(getResources().getString(R.string.dl_cancel),
+                                    new DialogInterface.OnClickListener() {
+
+                                        public void onClick(DialogInterface dialog, int which) {
+
+                                            //finish();
+                                        }
+                                    });
+                            // Showing Alert Dialog
+                            alertDialog3.show();
+                        } else {
+                            if (!word.trim().equals("")) {
+
+                                startActivityForResult(i, SHOW_CONTENT_CODE);
+                            }
+
+                        }
+
+
+                        //Toast.makeText(Kadict.this, edWord.getText(), Toast.LENGTH_SHORT).show();
+                        return true;
+
+                    }
+
+
+                    return false;
+                }
+            });
+
+            lstWord.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+                public void onItemClick(AdapterView<?> arg0, View v, int arg2, long arg3) {
+                    // Start background thread to offload expensive operations
+                    new Thread(() -> {
+                        // Obtain data in background
+                        String word = Utility.encodeContent(mAdapter.getItem(arg2));
+                        long currentWordId = mLSTCurrentWordId.get(arg2);
+                        String dbFileName = mDBFile.fileName;
+                        String dbName = mDBFile.dictionaryName;
+                        String style = mDBFile.style;
+
+                        // Post results to the UI thread
+                        runOnUiThread(() -> {
+                            // Launch the new activity with the processed data
+                            Intent i = new Intent(v.getContext(), ContentView.class);
+                            i.putExtra("word", word);
+                            i.putExtra("id", currentWordId);
+                            i.putExtra("db", dbFileName);
+                            i.putExtra("dbName", dbName);
+                            i.putExtra("style", style);
+                            startActivityForResult(i, SHOW_CONTENT_CODE);
+                        });
+                    }).start();
+                }
+            });
+        }}
+
+    @Override
+    public void onBackPressed() {
+
+        prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(this);
+        boolean isExitDialog = prefs.getBoolean("isExitDialog", false);
+
+        if (isExitDialog) {
+            // Create an exit confirmation dialog
+            AlertDialog.Builder alertDialog = new AlertDialog.Builder(this);
+            alertDialog.setTitle(getResources().getString(R.string.kclose))
+                    .setMessage(Html.fromHtml(getResources().getString(R.string.kclose_mesg)))
+                    .setIcon(R.drawable.kadict)
+                    .setPositiveButton(getResources().getString(R.string.delete_ok), new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialog, int which) {
+                            finishAffinity(); // Close the activity and all parents
+                        }
+                    })
+                    .setNegativeButton(getResources().getString(R.string.delete_no), null)
+                    .setNeutralButton(getResources().getString(R.string.menuList), new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialog, int which) {
+                            Intent intent = new Intent(getApplicationContext(), MainPreferenceActivity.class);
+                            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            startActivity(intent);
+                        }
+                    })
+                    .show();
+        } else {
+            if (doubleBackToExitPressedOnce) {
+                super.onBackPressed();
+                return;
+            }
+
+            this.doubleBackToExitPressedOnce = true;
+            Toast.makeText(this, R.string.backagain, Toast.LENGTH_SHORT).show();
+
+            // Reset the flag after 2 seconds
+            new Handler().postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    doubleBackToExitPressedOnce = false;
+                }
+            }, 2000);
+        }
+
+
+
+
+
+}
+
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data)
+    {
+        super.onActivityResult(requestCode, resultCode, data);
+        switch (requestCode)
+        {
+            case SHOW_CONTENT_CODE:
+                Log.i(MAIN_TAG,"resultCode = " + resultCode);
+                if (resultCode == RESULT_OK)
+                {
+                    /*
+                     * TODO
+                     * what if the dictionary was changed by history viewing????
+                     */
+                    String word = data.getStringExtra("word");
+                    if (word != null)
+                    {
+                        edWord.setText(word);
+                        edWord.setSelection(0, edWord.length());
+                        edWord.requestFocus();
+
+                    }
+                }
+                break;
+            case SHOW_PREFERENCE_CODE:
+                if (resultCode == RESULT_OK)
+                {
+                    mWaitingTime = Integer.parseInt(prefs.getString("waitingTime", "1"));
+                    Log.i(MAIN_TAG,"Waiting time changed to " + mWaitingTime);
+                }
+                break;
+        }
+    }
+
+    private boolean appInstalledOrNot(String uri) {
+        PackageManager pm = getPackageManager();
+        boolean app_installed;
+        try {
+            pm.getPackageInfo(uri, PackageManager.GET_ACTIVITIES);
+            app_installed = true;
+        }
+        catch (PackageManager.NameNotFoundException e) {
+            app_installed = false;
+        }
+        return app_installed;
+    }
+
+    private final OnGesturePerformedListener handleGestureListener = new OnGesturePerformedListener() {
+
+        @Override
+        public void onGesturePerformed(GestureOverlayView gestureView,
+                                       Gesture gesture) {
+            ArrayList<Prediction> predictions = gLib.recognize(gesture);
+
+            // one prediction needed
+            if (predictions.size() > 0) {
+                Prediction prediction = predictions.get(0);
+                // checking prediction
+                if (prediction.score > 1.0) {
+
+                    edWord.append(prediction.name);
+                }
+            }
+
+        }
+    };
+
+// Initialize SpeechRecognizer
+private void initializeSpeechRecognizer() {
+    speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
+
+    speechRecognizer.setRecognitionListener(new RecognitionListener() {
+        @Override
+        public void onReadyForSpeech(Bundle params) {
+            //if (isReadyForSpeech) {  // Show Toast only if ready
+                Toast.makeText(getApplicationContext(), (getResources().getString(R.string.mic_listen)), Toast.LENGTH_SHORT).show();
+            //}
+        }
+
+        @Override
+        public void onResults(Bundle results) {
+            ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+            if (matches != null) {
+                String spokenWord = matches.get(0);  // Get the first recognized word
+                Toast.makeText(getApplicationContext(), (getResources().getString(R.string.mic_said)) + " " + spokenWord, Toast.LENGTH_LONG).show();
+
+                edWord.setText(spokenWord);
+                edWord.requestFocus();
+                languageToggleButton.setVisibility(View.GONE);
+
+
+            }
+        }
+
+        /*@Override
+        public void onError(int error) {
+            Toast.makeText(getApplicationContext(), (getResources().getString(R.string.mic_error)) + " " + error, Toast.LENGTH_SHORT).show();
+            languageToggleButton.setVisibility(View.GONE);
+        }
+*/
+        @Override
+        public void onError(int error) {
+            isReadyForSpeech = false;  // Reset flag
+            String errorMessage;
+            switch (error) {
+                case SpeechRecognizer.ERROR_NETWORK_TIMEOUT:
+                    errorMessage = "Network timeout error";
+                    break;
+                case SpeechRecognizer.ERROR_NETWORK:
+                    errorMessage = "Network error. Please check your internet connection.";
+                    showNetworkErrorDialog();
+                    break;
+                case SpeechRecognizer.ERROR_AUDIO:
+                    errorMessage = "Audio error";
+                    break;
+                case SpeechRecognizer.ERROR_SERVER:
+                    errorMessage = "Server error";
+                    break;
+                case SpeechRecognizer.ERROR_CLIENT:
+                    errorMessage = "Client error";
+                    break;
+                case SpeechRecognizer.ERROR_SPEECH_TIMEOUT:
+                    errorMessage = "No speech input detected";
+                    break;
+                case SpeechRecognizer.ERROR_NO_MATCH:
+                    errorMessage = "No match found";
+                    break;
+                case SpeechRecognizer.ERROR_RECOGNIZER_BUSY:
+                    errorMessage = "Recognizer is busy";
+                    break;
+                case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS:
+                    errorMessage = "Insufficient permissions";
+                    break;
+                case SpeechRecognizer.ERROR_TOO_MANY_REQUESTS:
+                    errorMessage = "Too many requests to the service";
+                    showNetworkErrorDialog();
+                    break;
+                case SpeechRecognizer.ERROR_SERVER_DISCONNECTED:
+                    errorMessage = "Server disconnected";
+                    break;
+                case SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED:
+                    errorMessage = "Language not supported";
+                    break;
+                case SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE:
+                    errorMessage = "Language temporarily unavailable";
+                    showNetworkErrorDialog();
+                    break;
+                default:
+                    errorMessage = "Unknown error";
+                    break;
+            }
+            languageToggleButton.setVisibility(View.GONE);
+            btnMic.setVisibility(View.VISIBLE);
+            btnChup.setVisibility(View.VISIBLE);
+            // Show a toast for errors except specific ones
+            if (error != SpeechRecognizer.ERROR_NETWORK &&
+                    error != SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE &&
+                    error != SpeechRecognizer.ERROR_TOO_MANY_REQUESTS) {
+                Toast.makeText(getApplicationContext(), errorMessage, Toast.LENGTH_LONG).show();
+            }
+
+        }
+
+
+        // Implement the required methods from RecognitionListener
+        @Override public void onBeginningOfSpeech() {}
+        @Override public void onBufferReceived(byte[] buffer) {}
+        @Override public void onEndOfSpeech() {}
+        @Override public void onEvent(int eventType, Bundle params) {}
+        @Override public void onPartialResults(Bundle partialResults) {}
+        @Override public void onRmsChanged(float rmsdB) {}
+    });
+
+    startListening();  // Start listening for speech
+}
+
+    // Toggle language between English and Vietnamese
+    private void toggleLanguage() {
+        if (currentLanguage.equals("vi-VN")) {
+            currentLanguage = "en-US";  // Switch to English
+            languageToggleButton.setText((getResources().getString(R.string.mic_toVN)));
+        } else {
+            currentLanguage = "vi-VN";  // Switch to Vietnamese
+            languageToggleButton.setText((getResources().getString(R.string.mic_toEn)));
+        }
+        startListening();  // Restart the speech recognizer with the new language
+    }
+
+    // Start listening with the selected language
+    private void startListening() {
+        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, currentLanguage);  // Set current language
+        intent.putExtra(RecognizerIntent.EXTRA_PROMPT, "Say the word...");
+        //intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
+        speechRecognizer.startListening(intent);
+        languageToggleButton.setVisibility(View.GONE);
+    }
+
+    private void showNetworkErrorDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle(getResources().getString(R.string.mic_error_dialog_title))
+                .setMessage(getResources().getString(R.string.mic_error_dialog_mesg))
+                .setIcon(R.drawable.notice2)  // Set your icon here
+                .setPositiveButton(getResources().getString(R.string.ok), new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        dialog.dismiss();
+                    }
+                })
+                .setNegativeButton(getResources().getString(R.string.retry_action), new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        // Optionally retry the speech recognition process here
+                        startListening();
+                    }
+                })
+                .show();
+    }
+    private void loadFileList() {
+        File mPath = new File(this.getExternalFilesDir(null) + "/NewKadict/db/");
+
+        //InputMethodManager imm;
+        String[] mFileList;
+        if(mPath.exists()) {
+            FilenameFilter filter = new FilenameFilter() {
+
+                public boolean accept(File dir, String filename) {
+	            	/*
+	                return !filename.startsWith("grammar") && !filename.startsWith("gestures")
+	                		&& !filename.contains("nhat") && !filename.contains("phap") && !filename.contains("viet_anhkd")
+	                		&& !filename.contains("trung") && !filename.contains("nga") && !filename.contains("duc")
+	                		&& !filename.contains("han") && !filename.contains("viet_viet");
+	                */
+                    return filename.contains("anh_") | filename.endsWith("_anh") | filename.contains("viet_")
+                            | filename.contains("han_") | filename.contains("nga_")
+                            | filename.contains("nhat_") | filename.contains("phap_")
+                            | filename.contains("trung_") | filename.contains("duc_")
+                            | filename.contains("OxfordTD") | filename.contains("OxfordALD")
+                            | filename.contains("svs") | filename.contains("y_");
+                }
+            };
+
+
+            mFileList = mPath.list(filter);
+
+            //Arrays.sort(mFileList);
+            //Arrays.sort(mFileList, Collections.reverseOrder());
+            // QuangNH: Tao mFileListNew gom cac tu "Từ điển Anh - Việt", "Từ điển Việt - Anh"
+            mFileListNew = new String[mFileList.length];
+
+
+            for (int i = 0; i< mFileList.length; i++) {
+                mFileListNew[i] = ((getResources().getString(R.string.db_dev)));
+                if (mFileList[i].equals("anh_viet"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_av)));
+                }
+                if (mFileList[i].equals("viet_anh"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_va)));
+                }
+                if (mFileList[i].equals("viet_han"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_vh)));
+                }
+
+                if (mFileList[i].equals("han_viet"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_hv)));
+                }
+                if (mFileList[i].equals("viet_trung"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_vt)));
+                }
+                if (mFileList[i].equals("viet_nga"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_vnga)));
+                }
+
+                if (mFileList[i].equals("trung_viet"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_tv)));
+                }
+                if (mFileList[i].equals("nga_viet"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_ngav)));
+                }
+                if (mFileList[i].equals("viet_phap"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_vp)));
+                }
+                if (mFileList[i].equals("phap_viet"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_pv)));
+                }
+                if (mFileList[i].equals("nhat_viet"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_nv)));
+                }
+                if (mFileList[i].equals("viet_nhat"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_vn)));
+                }
+
+                if (mFileList[i].equals("duc_viet"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_dv)));
+                }
+                if (mFileList[i].equals("viet_duc"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_vd)));
+                }
+                if (mFileList[i].equals("OxfordTD"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_aatd)));
+                }
+                if (mFileList[i].equals("OxfordALD"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_aaald)));
+                }
+                if (mFileList[i].equals("viet_trung_gt"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_vtgt)));
+                }
+                if (mFileList[i].equals("trung_viet_gt"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_tvgt)));
+                }
+                if (mFileList[i].equals("viet_viet"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.db_vv)));
+                }
+                if (mFileList[i].equals("svs"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.svs)));
+                }
+                if (mFileList[i].equals("y_viet"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.syv)));
+                }
+                if (mFileList[i].equals("viet_y"))
+                {
+                    mFileListNew[i] = ((getResources().getString(R.string.svy)));
+                }
+
+                //... Them cac tu dien khac
+            }
+            // QuangNH //////////////////
+        }
+        else
+        {
+            mFileList = new String[0];
+        }
+    }
+
+
+    public void manageDictionary()
+    {
+        Intent intent = new Intent(Kadict.this, db_manager.class);
+        intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        Kadict.this.startActivity(intent);
+
+    }
+
+    public void savePreferences()
+    {
+        Log.d(MAIN_TAG, "Saving default dictionary = " + mDBFile.path + "-" + mDBFile.fileName);
+        SharedPreferences.Editor editor = prefs.edit();
+        editor.putString("defaultDictionary", mDBFile.fileName);
+        editor.putString("defaultDictionaryPath", mDBFile.path);
+        editor.apply();
+    }
+
+    public void loadPreferences()
+    {
+        //Loading the default language
+        String langChange = prefs.getString("language", "1");
+        Log.i(MAIN_TAG,"Language = " + langChange);
+        // Load the default dictionary
+        boolean found = false;
+        String savedDB = prefs.getString("defaultDictionary", ""); //Default dictionary is the first dictionary in the list
+        String savedDBPath = prefs.getString("defaultDictionaryPath", ""); //Default dictionary is the first dictionary in the list
+        if (savedDB.trim().equals("") || savedDBPath.trim().equals(""))
+        {
+            Log.i(MAIN_TAG,"Error in loading default dictionary");
+            if (mDBList != null && mDBList.items.size() > 0)
+            {
+                mDBFile = mDBList.items.get(0);
+                //Log.d(MAIN_TAG,"Use the first item = " + mDBFile.path + " | filename = " + mDBFile.fileName);
+            }
+            else
+            {
+                mDBFile = null;
+            }
+        }
+        else
+        {
+            //Log.i(MAIN_TAG,"Loaded default dictionary = " + savedDBPath + " - " + savedDB);
+            if (mDBList != null && mDBList.items.size() > 0)
+            {
+                for (DatabaseFile d : mDBList.items)
+                {
+                    if (d.fileName.equals(savedDB) && d.path.equals(savedDBPath))
+                    {
+                        mDBFile = d;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                {
+                    //when the database is deleted, set mSelectedDB to the first element of database list
+                    mDBFile = mDBList.items.get(0);
+                    Log.i(MAIN_TAG, "Database file is not in list anymore, use the first one of list");
+                }
+            }
+            else
+            {
+                Log.d(MAIN_TAG,"No database found");
+                mDBFile = null;
+                /*
+                 * TODO
+                 * - show "no dictionary" page
+                 */
+            }
+        }
+        if (mDBFile != null)
+        {
+            Log.d(MAIN_TAG,"default path = " + mDBFile.path + " | filename = " + mDBFile.fileName);
+        }
+        else
+        {
+            Log.i(MAIN_TAG,"No database found!");
+        }
+
+    }
+
+
+    public void showWordlist() {
+        String word = edWord.getText().toString(); // Ensure case insensitivity
+        //String word = edWord.getText().toString();
+        // If the word is empty, clear the list
+        if (word.isEmpty()) {
+            mLSTCurrentWord.clear();
+            mLSTCurrentWordId.clear();
+            mAdapter.clear();
+            lstWord.setAdapter(mAdapter);
+            return; // Exit the method if no text is present
+        }
+
+        Uri uri = Uri.parse("content://viettien.newkadict.KadictProvider/dict/" + mDBFile.fileName + "/list/" + word);
+        Log.i(MAIN_TAG, "WHAT ABOUT URI = " + uri);
+
+        Cursor result = null;
+        try {
+            result = getContentResolver().query(uri, null, null, null, null);
+
+            Log.i(MAIN_TAG, "Cursor result = " + result);
+
+            if (result != null) {
+                int countRow = result.getCount();
+                Log.i(MAIN_TAG, "countRow = " + countRow);
+                mLSTCurrentWord.clear();
+                mLSTCurrentWordId.clear();
+                mAdapter.clear();
+
+                if (countRow >= 1) {
+                    int indexWordColumn = result.getColumnIndex("word");
+                    int indexIdColumn = result.getColumnIndex("id");
+
+                    result.moveToFirst();
+                    String strWord;
+                    int intId;
+
+                    do {
+                        strWord = Utility.decodeContent(result.getString(indexWordColumn));
+                        intId = result.getInt(indexIdColumn);
+
+                        // Check for null or empty values before adding
+                        if (!strWord.isEmpty() && !mLSTCurrentWord.contains(strWord)) {
+                            mLSTCurrentWord.add(strWord);
+                            mLSTCurrentWordId.add(intId);
+                            mAdapter.add(strWord);
+                        }
+                    } while (result.moveToNext());
+                }
+
+                // Logging the entire cursor for debugging
+                result.moveToFirst();
+                do {
+
+                    int indexWordColumn = result.getColumnIndex("word");
+                    int indexIdColumn = result.getColumnIndex("id");
+
+                    if (indexWordColumn >= 0 && indexIdColumn >= 0) {
+                        String logWord = Utility.decodeContent(result.getString(indexWordColumn));
+                        int logId = result.getInt(indexIdColumn);
+                        Log.i(MAIN_TAG, "Word: " + logWord + ", ID: " + logId);
+                    } else {
+                        Log.e(MAIN_TAG, "Error: Column 'word' or 'id' does not exist in the result set");
+                    }
+
+
+
+                } while (result.moveToNext());
+            }
+
+            if (word != null) {
+                LinearLayout tabview = (LinearLayout) this.findViewById(R.id.tabview);
+                assert tabview != null;
+                tabview.setVisibility(LinearLayout.GONE);
+
+                if (menu.findItem(R.id.btnBack) != null) {
+                    menu.findItem(R.id.btnBack).setVisible(true);
+                }
+
+                btnETextClear.setVisibility(View.VISIBLE);
+            }
+
+            mAdapter.notifyDataSetChanged();  // Notify adapter of changes
+            lstWord.setAdapter(mAdapter);
+        } catch (Exception ex) {
+            Log.e(MAIN_TAG, "Error = " + ex);
+        } finally {
+            if (result != null) {
+                result.close();  // Ensure cursor is always closed
+            }
+        }
+    }
+
+    private void mergeCursorResults(Cursor cursor) {
+        int indexWordColumn = cursor.getColumnIndex("word");
+        int indexIdColumn = cursor.getColumnIndex("id");
+
+        cursor.moveToFirst();
+        String strWord;
+        int intId;
+
+        do {
+            strWord = Utility.decodeContent(cursor.getString(indexWordColumn));
+            intId = cursor.getInt(indexIdColumn);
+
+            if (!mLSTCurrentWord.contains(strWord)) {
+                mLSTCurrentWord.add(strWord);
+                mLSTCurrentWordId.add(intId);
+                mAdapter.add(strWord);
+            }
+        } while (cursor.moveToNext());
+    }
+    private void applyLocale() {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        String langChange = prefs.getString("language", "1");
+        if (langChange.equals("1")) {
+            setLocale("en");
+        } else {
+            setLocale("vi");
+        }
+    }
+
+    private void setLocale(String languageToLoad) {
+        Locale locale = new Locale(languageToLoad);
+        Locale.setDefault(locale);
+        Configuration config = new Configuration();
+        config.setLocale(locale);
+        getBaseContext().getResources().updateConfiguration(config, getBaseContext().getResources().getDisplayMetrics());
+    }
+
+
+}
+
